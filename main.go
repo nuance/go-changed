@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 func resolve(imports map[string][]string, pkg string) []string {
@@ -37,11 +38,20 @@ func resolve(imports map[string][]string, pkg string) []string {
 }
 
 func main() {
+	skipList := ""
+	flag.StringVar(&skipList, "skip", "", "List of files to skip")
 	flag.Parse()
 
 	goPath := os.Getenv("GOPATH")
 	base := filepath.Join(goPath, "src")
 
+	skipMap := map[string]bool{}
+	if len(skipList) > 0 {
+		fns := strings.Split(skipList, ",")
+		for _, fn := range fns {
+			skipMap[fn] = true
+		}
+	}
 	// Parse import deps and contained files for all the packages
 	filePackage := map[string]string{}
 	pkgImports := map[string][]string{}
@@ -50,7 +60,12 @@ func main() {
 			return nil
 		}
 
-		pkgs, err := parser.ParseDir(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		pkgs, err := parser.ParseDir(token.NewFileSet(), path, func(fi os.FileInfo) bool {
+			if skipMap[fi.Name()] {
+				return false
+			}
+			return true
+		}, parser.ImportsOnly)
 		if err != nil {
 			log.Panicln("couldn't parse files in src:", err.Error())
 		}
@@ -104,7 +119,6 @@ func main() {
 	for scanner.Scan() {
 		file := scanner.Text()
 		pkg := filePackage[file]
-		log.Println(file, pkg)
 
 		for _, down := range downstreams[pkg] {
 			affected[down] = true
